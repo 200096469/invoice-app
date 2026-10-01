@@ -20,9 +20,27 @@ body {
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
 
-/* In stampa lo sfondo diventa bianco */
+/* Il "foglio" della fattura: largo come un A4 a schermo */
+.invoice-sheet {
+  max-width: 210mm;
+}
+
+/* In stampa: pagina A4 con margini, sfondo bianco,
+   e colori di sfondo (le barre scure) stampati davvero */
+@page {
+  size: A4;
+  margin: 15mm;
+}
+
 @media print {
   body {
     background: #ffffff;
+  }
+  .invoice-sheet {
+    max-width: none;
+  }
+  * {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
   }
 }

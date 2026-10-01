@@ -23,6 +23,23 @@ export function formatDate(isoDate) {
   return `${day}-${month}-${year}`;
 }
 
+// "2026-09-22" → "22.09" (formato breve usato nelle righe della fattura)
+export function formatDayMonth(isoDate) {
+  if (!isoDate) return "";
+  const [, month, day] = isoDate.split("-");
+  return `${day}.${month}`;
+}
+
+// "10:00:00" (formato del database) → "10:00"
+export function formatTime(time) {
+  return time ? time.slice(0, 5) : "";
+}
+
+// 2 → "2.0", 3.4 → "3.4" (una cifra decimale, come nelle fatture reali)
+export function formatQuantity(value) {
+  return Number(value ?? 0).toFixed(1);
+}
+
 // Colori dei badge per lo stato della fattura
 export const STATUS_STYLES = {
   draft: "bg-gray-100 text-gray-700",
