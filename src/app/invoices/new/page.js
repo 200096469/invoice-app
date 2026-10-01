@@ -1,0 +1,610 @@
+"use client";
+// =====================================================================
+// Nuova fattura — /invoices/new
+//
+// Il form più complesso dell'app. useState conserva:
+//   - i dati di base (cliente, date, periodo, commenti)
+//   - l'elenco delle righe (un array di oggetti)
+// useEffect carica i dati iniziali e gli assistiti del cliente scelto.
+//
+// Quando si salva:
+//   1. calcola il prossimo numero dell'anno (es. 54/26)
+//   2. inserisce la fattura nella tabella invoices
+//   3. inserisce le righe in invoice_items
+//   4. apre la pagina di dettaglio /invoices/[id]
+// =====================================================================
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { supabase } from "@/lib/supabaseClient";
+import { formatCurrency } from "@/lib/format";
+import {
+  addDays,
+  buildPeriodTitle,
+  daysBetween,
+  hoursBetween,
+  mondayOf,
+  todayISO,
+} from "@/lib/dateHelpers";
+
+// Crea una riga vuota. "key" serve a React per distinguere le righe
+// (non va nel database).
+function emptyLine(type = "service", date = "", recipientId = "") {
+  return {
+    key: crypto.randomUUID(),
+    item_type: type,
+    service_date: date,
+    care_recipient_id: recipientId,
+    service_id: "",
+    description: "",
+    start_time: "",
+    end_time: "",
+    route: "",
+    quantity: "",
+    unit: type === "mileage" ? "Km" : "hours",
+    unit_price: "",
+    gst_applicable: true,
+  };
+}
+
+// Stile comune dei campi del form
+const inputClass = "w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm";
+
+export default function NewInvoicePage() {
+  const router = useRouter();
+
+  // ---------- Dati caricati da Supabase ----------
+  const [settings, setSettings] = useState(null);
+  const [clients, setClients] = useState([]);
+  const [services, setServices] = useState([]);
+  const [recipients, setRecipients] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(null);
+
+  // ---------- Dati della fattura (valori iniziali calcolati una volta) ----------
+  const [clientId, setClientId] = useState("");
+  const [issueDate, setIssueDate] = useState(todayISO);
+  const [dueDate, setDueDate] = useState(() => addDays(todayISO(), 14));
+  const [periodStart, setPeriodStart] = useState(() => mondayOf(todayISO()));
+  const [periodEnd, setPeriodEnd] = useState(() => addDays(mondayOf(todayISO()), 6));
+  const [periodTitle, setPeriodTitle] = useState(() =>
+    buildPeriodTitle(mondayOf(todayISO()), addDays(mondayOf(todayISO()), 6))
+  );
+  const [comments, setComments] = useState("");
+  const [otherAmount, setOtherAmount] = useState("0");
+  const [lines, setLines] = useState([]);
+
+  // ---------- Stato del salvataggio ----------
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState(null);
+  const [copyMessage, setCopyMessage] = useState(null);
+
+  // useEffect #1: al caricamento legge impostazioni, clienti e servizi
+  useEffect(() => {
+    async function loadInitialData() {
+      const [settingsResult, clientsResult, servicesResult] = await Promise.all([
+        supabase.from("settings").select("*").maybeSingle(),
+        supabase.from("clients").select("*").eq("active", true).order("client_code"),
+        supabase.from("services").select("*").eq("active", true).order("description"),
+      ]);
+
+      const firstError = settingsResult.error || clientsResult.error || servicesResult.error;
+      if (firstError) {
+        setLoadError(firstError.message);
+        setLoading(false);
+        return;
+      }
+
+      setSettings(settingsResult.data);
+      setClients(clientsResult.data);
+      setServices(servicesResult.data);
+      // la scadenza usa i giorni di pagamento delle impostazioni
+      if (settingsResult.data) {
+        setDueDate(addDays(todayISO(), settingsResult.data.payment_terms_days));
+      }
+      setLoading(false);
+    }
+    loadInitialData();
+  }, []);
+
+  // useEffect #2: quando cambia il cliente, carica i suoi assistiti
+  useEffect(() => {
+    async function loadRecipients() {
+      if (!clientId) {
+        setRecipients([]);
+        return;
+      }
+      const { data } = await supabase
+        .from("care_recipients")
+        .select("*")
+        .eq("client_id", clientId)
+        .eq("active", true)
+        .order("full_name");
+      setRecipients(data ?? []);
+    }
+    loadRecipients();
+  }, [clientId]);
+
+  // ---------- Valori derivati (ricalcolati a ogni render) ----------
+  const selectedClient = clients.find((c) => String(c.id) === String(clientId));
+  // per un cliente privato c'è un solo assistito: viene scelto in automatico
+  const defaultRecipientId = recipients.length === 1 ? String(recipients[0].id) : "";
+  const gstOn = Boolean(settings?.gst_registered);
+  const gstRate = gstOn ? Number(settings.gst_rate) : 0;
+
+  const lineAmount = (line) => (Number(line.quantity) || 0) * (Number(line.unit_price) || 0);
+  const subtotal = lines.reduce((sum, line) => sum + lineAmount(line), 0);
+  const gstBase = lines.filter((l) => l.gst_applicable).reduce((sum, l) => sum + lineAmount(l), 0);
+  const taxAmount = gstOn ? Math.round(gstBase * gstRate) / 100 : 0;
+  const total = subtotal + taxAmount + (Number(otherAmount) || 0);
+
+  // ---------- Gestione delle date ----------
+  function handleIssueDateChange(value) {
+    setIssueDate(value);
+    if (value) setDueDate(addDays(value, settings?.payment_terms_days ?? 14));
+  }
+
+  function handlePeriodStartChange(value) {
+    setPeriodStart(value);
+    if (!value) return;
+    const newEnd = addDays(value, 6); // di default una settimana
+    setPeriodEnd(newEnd);
+    setPeriodTitle(buildPeriodTitle(value, newEnd));
+  }
+
+  function handlePeriodEndChange(value) {
+    setPeriodEnd(value);
+    if (value && periodStart) setPeriodTitle(buildPeriodTitle(periodStart, value));
+  }
+
+  // ---------- Gestione delle righe ----------
+  // Aggiorna solo alcuni campi di una riga, lasciando invariate le altre
+  function updateLine(key, changes) {
+    setLines((current) =>
+      current.map((line) => (line.key === key ? { ...line, ...changes } : line))
+    );
+  }
+
+  function addLine(type) {
+    setLines((current) => [...current, emptyLine(type, periodStart, defaultRecipientId)]);
+  }
+
+  function removeLine(key) {
+    setLines((current) => current.filter((line) => line.key !== key));
+  }
+
+  // Chiede a Supabase la tariffa giusta (assistito → cliente → base)
+  async function applyRate(key, recipientId, serviceId) {
+    if (!serviceId) return;
+    const service = services.find((s) => String(s.id) === String(serviceId));
+    if (!recipientId) {
+      updateLine(key, { unit_price: service ? String(service.default_rate) : "" });
+      return;
+    }
+    const { data, error } = await supabase.rpc("get_rate", {
+      p_care_recipient_id: Number(recipientId),
+      p_service_id: Number(serviceId),
+    });
+    if (!error && data !== null) updateLine(key, { unit_price: String(data) });
+  }
+
+  function handleServiceChange(line, serviceId) {
+    const service = services.find((s) => String(s.id) === String(serviceId));
+    updateLine(line.key, {
+      service_id: serviceId,
+      description: service ? service.description : "",
+      unit: service ? service.unit : line.unit,
+      gst_applicable: service ? service.gst_applicable : true,
+    });
+    applyRate(line.key, line.care_recipient_id, serviceId);
+  }
+
+  function handleRecipientChange(line, recipientId) {
+    updateLine(line.key, { care_recipient_id: recipientId });
+    applyRate(line.key, recipientId, line.service_id);
+  }
+
+  // Le ore si ricalcolano quando cambia l'orario di inizio o di fine
+  function handleTimeChange(line, field, value) {
+    const start = field === "start_time" ? value : line.start_time;
+    const end = field === "end_time" ? value : line.end_time;
+    const hours = hoursBetween(start, end);
+    updateLine(line.key, {
+      [field]: value,
+      ...(hours !== null ? { quantity: String(hours) } : {}),
+    });
+  }
+
+  // Copia le righe dell'ultima fattura del cliente, spostando le date
+  // della stessa distanza tra il vecchio e il nuovo periodo.
+  async function copyLastInvoice() {
+    setCopyMessage(null);
+    const { data: lastInvoice } = await supabase
+      .from("invoices")
+      .select("id, invoice_number, period_start")
+      .eq("client_id", clientId)
+      .neq("status", "void")
+      .order("period_start", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!lastInvoice) {
+      setCopyMessage("This client has no previous invoices to copy.");
+      return;
+    }
+
+    const { data: oldItems } = await supabase
+      .from("invoice_items")
+      .select("*")
+      .eq("invoice_id", lastInvoice.id)
+      .order("position");
+
+    const shift =
+      lastInvoice.period_start && periodStart ? daysBetween(lastInvoice.period_start, periodStart) : 0;
+
+    const copied = (oldItems ?? []).map((item) => ({
+      key: crypto.randomUUID(),
+      item_type: item.item_type,
+      service_date: item.service_date ? addDays(item.service_date, shift) : "",
+      care_recipient_id: item.care_recipient_id ? String(item.care_recipient_id) : "",
+      service_id: item.service_id ? String(item.service_id) : "",
+      description: item.description,
+      start_time: item.start_time ? item.start_time.slice(0, 5) : "",
+      end_time: item.end_time ? item.end_time.slice(0, 5) : "",
+      route: item.route ?? "",
+      quantity: String(item.quantity),
+      unit: item.unit,
+      unit_price: String(item.unit_price),
+      gst_applicable: item.gst_applicable,
+    }));
+
+    setLines(copied);
+    setCopyMessage(
+      `Copied ${copied.length} lines from invoice ${lastInvoice.invoice_number}. Check dates, times and kilometres.`
+    );
+  }
+
+  // ---------- Controllo dei dati prima del salvataggio ----------
+  function validate() {
+    if (!clientId) return "Choose a client.";
+    if (!issueDate) return "Enter the issue date.";
+    if (periodStart && periodEnd && periodEnd < periodStart) return "The period ends before it starts.";
+    if (lines.length === 0) return "Add at least one line.";
+    for (const [index, line] of lines.entries()) {
+      const n = index + 1;
+      if (!line.description.trim()) return `Line ${n}: enter a description or choose a service.`;
+      if (!(Number(line.quantity) > 0)) return `Line ${n}: the quantity must be greater than 0.`;
+      if (line.unit_price === "" || Number(line.unit_price) < 0) return `Line ${n}: enter a valid rate.`;
+      if (line.start_time && line.end_time && line.end_time <= line.start_time)
+        return `Line ${n}: the end time must be after the start time.`;
+    }
+    return null;
+  }
+
+  // ---------- Salvataggio ----------
+  async function handleSave(event) {
+    event.preventDefault();
+    const problem = validate();
+    if (problem) {
+      setFormError(problem);
+      return;
+    }
+    setSaving(true);
+    setFormError(null);
+
+    // 1. Prossimo numero dell'anno: il più alto + 1
+    const year = Number(issueDate.slice(0, 4));
+    const { data: lastNumber } = await supabase
+      .from("invoices")
+      .select("sequence_number")
+      .eq("year", year)
+      .order("sequence_number", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const sequenceNumber = (lastNumber?.sequence_number ?? 0) + 1;
+
+    // 2. La fattura. GST copiata dalle impostazioni in questo momento.
+    const { data: newInvoice, error: invoiceError } = await supabase
+      .from("invoices")
+      .insert({
+        year,
+        sequence_number: sequenceNumber,
+        client_id: Number(clientId),
+        issue_date: issueDate,
+        due_date: dueDate || null,
+        period_start: periodStart || null,
+        period_end: periodEnd || null,
+        period_title: periodTitle.trim() || null,
+        status: "draft",
+        gst_included: gstOn,
+        gst_rate: gstRate,
+        other_amount: Number(otherAmount) || 0,
+        comments: comments.trim() || null,
+      })
+      .select("id")
+      .single();
+
+    if (invoiceError) {
+      setFormError(`Could not save the invoice: ${invoiceError.message}`);
+      setSaving(false);
+      return;
+    }
+
+    // 3. Le righe, collegate alla fattura appena creata
+    const rows = lines.map((line, index) => ({
+      invoice_id: newInvoice.id,
+      position: index + 1,
+      item_type: line.item_type,
+      service_date: line.service_date || null,
+      care_recipient_id: line.care_recipient_id ? Number(line.care_recipient_id) : null,
+      service_id: line.service_id ? Number(line.service_id) : null,
+      description: line.description.trim(),
+      start_time: line.start_time || null,
+      end_time: line.end_time || null,
+      route: line.route.trim() || null,
+      quantity: Number(line.quantity),
+      unit: line.unit,
+      unit_price: Number(line.unit_price),
+      gst_applicable: line.gst_applicable,
+    }));
+
+    const { error: itemsError } = await supabase.from("invoice_items").insert(rows);
+
+    if (itemsError) {
+      // se le righe falliscono, si toglie la fattura vuota appena creata
+      await supabase.from("invoices").delete().eq("id", newInvoice.id);
+      setFormError(`Could not save the invoice lines: ${itemsError.message}`);
+      setSaving(false);
+      return;
+    }
+
+    // 4. Tutto salvato: apre la fattura
+    router.push(`/invoices/${newInvoice.id}`);
+  }
+
+  // ---------- Render ----------
+  if (loading) return <p className="text-gray-500">Loading...</p>;
+  if (loadError) return <p className="text-red-600">Could not load the form data: {loadError}</p>;
+
+  return (
+    <form onSubmit={handleSave} className="space-y-6">
+      <div className="flex flex-wrap items-center gap-3">
+        <h1 className="text-2xl font-semibold text-gray-900">New invoice</h1>
+        {gstOn && (
+          <span className="rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-medium text-amber-700">
+            Tax invoice · GST {gstRate}%
+          </span>
+        )}
+      </div>
+
+      {/* ----- Cliente e date ----- */}
+      <section className="grid gap-4 rounded-lg border border-gray-200 bg-white p-4 sm:grid-cols-2">
+        <label className="block sm:col-span-2">
+          <span className="text-sm font-medium text-gray-700">Client</span>
+          <select
+            value={clientId}
+            onChange={(e) => {
+              setClientId(e.target.value);
+              setLines([]); // gli assistiti cambiano: si riparte da zero
+              setCopyMessage(null);
+            }}
+            className={inputClass}
+          >
+            <option value="">Choose a client...</option>
+            {clients.map((client) => (
+              <option key={client.id} value={client.id}>
+                {client.client_code} – {client.contact_name}
+                {client.company ? ` (${client.company})` : ""}
+                {client.client_type === "private" ? " · private" : ""}
+              </option>
+            ))}
+          </select>
+        </label>
+
+        <label className="block">
+          <span className="text-sm font-medium text-gray-700">Issue date</span>
+          <input type="date" value={issueDate} onChange={(e) => handleIssueDateChange(e.target.value)} className={inputClass} />
+        </label>
+
+        <label className="block">
+          <span className="text-sm font-medium text-gray-700">Due date</span>
+          <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} className={inputClass} />
+        </label>
+
+        <label className="block">
+          <span className="text-sm font-medium text-gray-700">Period from</span>
+          <input type="date" value={periodStart} onChange={(e) => handlePeriodStartChange(e.target.value)} className={inputClass} />
+        </label>
+
+        <label className="block">
+          <span className="text-sm font-medium text-gray-700">Period to</span>
+          <input type="date" value={periodEnd} onChange={(e) => handlePeriodEndChange(e.target.value)} className={inputClass} />
+        </label>
+
+        <label className="block sm:col-span-2">
+          <span className="text-sm font-medium text-gray-700">Period title (printed on the invoice)</span>
+          <input type="text" value={periodTitle} onChange={(e) => setPeriodTitle(e.target.value)} className={inputClass} />
+        </label>
+      </section>
+
+      {/* ----- Righe ----- */}
+      <section className="rounded-lg border border-gray-200 bg-white">
+        <div className="flex flex-wrap items-center gap-2 border-b border-gray-200 px-4 py-3">
+          <h2 className="mr-auto font-medium text-gray-900">Lines</h2>
+          {clientId && (
+            <button type="button" onClick={copyLastInvoice} className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100">
+              Copy last invoice
+            </button>
+          )}
+          <button type="button" disabled={!clientId} onClick={() => addLine("service")} className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-40">
+            + Service
+          </button>
+          <button type="button" disabled={!clientId} onClick={() => addLine("mileage")} className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-40">
+            + Mileage
+          </button>
+          <button type="button" disabled={!clientId} onClick={() => addLine("other")} className="rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100 disabled:opacity-40">
+            + Other
+          </button>
+        </div>
+
+        {copyMessage && <p className="border-b border-gray-200 bg-blue-50 px-4 py-2 text-sm text-blue-800">{copyMessage}</p>}
+
+        {!clientId && <p className="px-4 py-6 text-gray-500">Choose a client to start adding lines.</p>}
+        {clientId && lines.length === 0 && (
+          <p className="px-4 py-6 text-gray-500">No lines yet. Add a service, a mileage line, or copy the last invoice.</p>
+        )}
+
+        {lines.map((line, index) => {
+          // servizi adatti al tipo di riga: Km per il rimborso, ore per i servizi
+          const serviceOptions = services.filter((s) =>
+            line.item_type === "mileage" ? s.unit === "Km" : s.unit !== "Km"
+          );
+          return (
+            <div key={line.key} className="grid gap-3 border-t border-gray-100 px-4 py-4 first:border-t-0 sm:grid-cols-6">
+              <div className="flex items-center justify-between sm:col-span-6">
+                <span className="text-xs font-semibold uppercase tracking-wide text-gray-500">
+                  Line {index + 1} · {line.item_type}
+                </span>
+                <button type="button" onClick={() => removeLine(line.key)} className="text-sm text-red-600 hover:underline">
+                  Remove
+                </button>
+              </div>
+
+              <label className="block sm:col-span-2">
+                <span className="text-xs text-gray-600">Date</span>
+                <input type="date" value={line.service_date} onChange={(e) => updateLine(line.key, { service_date: e.target.value })} className={inputClass} />
+              </label>
+
+              {line.item_type !== "other" && (
+                <label className="block sm:col-span-4">
+                  <span className="text-xs text-gray-600">Care recipient</span>
+                  <select value={line.care_recipient_id} onChange={(e) => handleRecipientChange(line, e.target.value)} className={inputClass}>
+                    <option value="">Choose...</option>
+                    {recipients.map((r) => (
+                      <option key={r.id} value={r.id}>
+                        {r.full_name} – {r.address}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              {line.item_type !== "other" && (
+                <label className="block sm:col-span-6">
+                  <span className="text-xs text-gray-600">Service</span>
+                  <select value={line.service_id} onChange={(e) => handleServiceChange(line, e.target.value)} className={inputClass}>
+                    <option value="">Choose...</option>
+                    {serviceOptions.map((s) => (
+                      <option key={s.id} value={s.id}>
+                        {s.description}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+
+              <label className="block sm:col-span-6">
+                <span className="text-xs text-gray-600">Description (printed on the invoice)</span>
+                <input type="text" value={line.description} onChange={(e) => updateLine(line.key, { description: e.target.value })} className={inputClass} />
+              </label>
+
+              {line.item_type === "service" && (
+                <>
+                  <label className="block sm:col-span-2">
+                    <span className="text-xs text-gray-600">Start time</span>
+                    <input type="time" value={line.start_time} onChange={(e) => handleTimeChange(line, "start_time", e.target.value)} className={inputClass} />
+                  </label>
+                  <label className="block sm:col-span-2">
+                    <span className="text-xs text-gray-600">End time</span>
+                    <input type="time" value={line.end_time} onChange={(e) => handleTimeChange(line, "end_time", e.target.value)} className={inputClass} />
+                  </label>
+                </>
+              )}
+
+              {line.item_type === "mileage" && (
+                <label className="block sm:col-span-4">
+                  <span className="text-xs text-gray-600">Route</span>
+                  <input
+                    type="text"
+                    placeholder="From ... to ... and back"
+                    value={line.route}
+                    onChange={(e) => updateLine(line.key, { route: e.target.value })}
+                    className={inputClass}
+                  />
+                </label>
+              )}
+
+              {line.item_type === "other" && (
+                <label className="block sm:col-span-4">
+                  <span className="text-xs text-gray-600">Unit</span>
+                  <input type="text" value={line.unit} onChange={(e) => updateLine(line.key, { unit: e.target.value })} className={inputClass} />
+                </label>
+              )}
+
+              <label className="block">
+                <span className="text-xs text-gray-600">{line.unit === "Km" ? "Km" : line.unit === "hours" ? "Hours" : "Qty"}</span>
+                <input type="number" step="0.1" min="0" value={line.quantity} onChange={(e) => updateLine(line.key, { quantity: e.target.value })} className={inputClass} />
+              </label>
+
+              <label className="block">
+                <span className="text-xs text-gray-600">Rate $</span>
+                <input type="number" step="0.01" min="0" value={line.unit_price} onChange={(e) => updateLine(line.key, { unit_price: e.target.value })} className={inputClass} />
+              </label>
+
+              <p className="self-end text-right text-sm font-medium text-gray-900 sm:col-span-6">
+                Amount: {formatCurrency(lineAmount(line))}
+              </p>
+            </div>
+          );
+        })}
+      </section>
+
+      {/* ----- Commenti e totali ----- */}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <label className="block rounded-lg border border-gray-200 bg-white p-4">
+          <span className="text-sm font-medium text-gray-700">Other comments (optional)</span>
+          <textarea rows={4} value={comments} onChange={(e) => setComments(e.target.value)} className={inputClass} />
+          <span className="text-xs text-gray-500">Bank details and payment terms are added automatically.</span>
+        </label>
+
+        <section className="rounded-lg border border-gray-200 bg-white p-4 text-sm">
+          <dl className="grid grid-cols-2 items-center gap-y-1">
+            <dt className="text-gray-500">Subtotal</dt>
+            <dd className="text-right">{formatCurrency(subtotal)}</dd>
+            <dt className="text-gray-500">Tax rate</dt>
+            <dd className="text-right">{gstRate.toFixed(1)}%</dd>
+            <dt className="text-gray-500">Tax</dt>
+            <dd className="text-right">{formatCurrency(taxAmount)}</dd>
+            <dt className="text-gray-500">Other</dt>
+            <dd className="text-right">
+              <input
+                type="number"
+                step="0.01"
+                value={otherAmount}
+                onChange={(e) => setOtherAmount(e.target.value)}
+                className="w-24 rounded-md border border-gray-300 px-2 py-1 text-right text-sm"
+              />
+            </dd>
+            <dt className="border-t border-gray-200 pt-2 font-semibold text-gray-900">Total</dt>
+            <dd className="border-t border-gray-200 pt-2 text-right font-semibold text-gray-900">{formatCurrency(total)}</dd>
+          </dl>
+        </section>
+      </div>
+
+      {formError && <p className="rounded-md bg-red-50 px-4 py-2 text-sm text-red-700">{formError}</p>}
+
+      <div className="flex justify-end gap-2">
+        <Link href="/" className="rounded-md border border-gray-300 px-4 py-2 text-sm text-gray-700 hover:bg-gray-100">
+          Cancel
+        </Link>
+        <button
+          type="submit"
+          disabled={saving}
+          className="rounded-md bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-700 disabled:opacity-50"
+        >
+          {saving ? "Saving..." : `Save invoice${selectedClient ? ` for ${selectedClient.client_code}` : ""}`}
+        </button>
+      </div>
+    </form>
+  );
+}
