@@ -44,7 +44,7 @@ export default function DashboardPage() {
         </Link>
       </div>
 
-      <section className="rounded-lg border border-gray-200 bg-white">
+      <section className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
         <h2 className="border-b border-gray-200 px-4 py-3 font-medium text-gray-900">
           Latest invoices
         </h2>

@@ -18,6 +18,32 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  /* margini sicuri: su iPhone con notch, il contenuto non finisce
+     sotto la fotocamera o la barra in basso (app a schermo intero) */
+  padding-left: env(safe-area-inset-left);
+  padding-right: env(safe-area-inset-right);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* iPhone/iPad: Safari ingrandisce la pagina quando si tocca un campo
+   con testo più piccolo di 16px. Sui touch screen i campi usano 16px,
+   così lo zoom non scatta e il form resta comodo da compilare. */
+@media (pointer: coarse) {
+  input,
+  select,
+  textarea {
+    font-size: 16px !important;
+  }
+}
+
+/* Il menu scorre in orizzontale sugli schermi stretti */
+.nav-scroll {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.nav-scroll::-webkit-scrollbar {
+  display: none;
 }
 
 /* Il "foglio" della fattura: un A4 vero anche a schermo

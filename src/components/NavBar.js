@@ -32,31 +32,45 @@ export default function NavBar() {
   }
 
   return (
-    <header className="border-b border-gray-200 bg-white print:hidden">
-      <nav className="mx-auto flex max-w-5xl flex-wrap items-center gap-1 px-4 py-3">
-        <span className="mr-4 font-semibold text-gray-900">Invoice App</span>
+    // pt con env(safe-area-inset-top): sotto il notch dell'iPhone quando
+    // l'app è aperta dalla schermata Home a schermo intero
+    <header className="sticky top-0 z-10 border-b border-gray-200 bg-white pt-[env(safe-area-inset-top)] print:hidden">
+      <div className="mx-auto flex max-w-5xl items-center gap-2 px-4 pt-3 sm:pb-3">
+        <span className="mr-2 shrink-0 font-semibold text-gray-900">Invoice App</span>
 
-        {LINKS.map((link) => (
-          <Link
-            key={link.href}
-            href={link.href}
-            className={`rounded-md px-3 py-1.5 text-sm ${
-              isActive(link.href)
-                ? "bg-gray-900 text-white"
-                : "text-gray-600 hover:bg-gray-100"
-            }`}
-          >
-            {link.label}
-          </Link>
-        ))}
+        {/* Su schermi larghi i link stanno qui, accanto al titolo */}
+        <nav className="hidden flex-1 items-center gap-1 sm:flex">
+          {LINKS.map((link) => (
+            <Link key={link.href} href={link.href} className={linkClass(link.href)}>
+              {link.label}
+            </Link>
+          ))}
+        </nav>
 
         <button
           onClick={handleSignOut}
-          className="ml-auto rounded-md px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100"
+          className="ml-auto shrink-0 rounded-md px-3 py-2 text-sm text-gray-600 hover:bg-gray-100"
         >
           Sign out
         </button>
+      </div>
+
+      {/* Su telefono i link vanno in una riga che scorre di lato */}
+      <nav className="nav-scroll flex gap-1 px-4 pt-2 pb-2 sm:hidden">
+        {LINKS.map((link) => (
+          <Link key={link.href} href={link.href} className={`shrink-0 ${linkClass(link.href)}`}>
+            {link.label}
+          </Link>
+        ))}
       </nav>
     </header>
   );
+
+  // Stile di un link: scuro se è la pagina corrente.
+  // py-2 = area da toccare più comoda col dito.
+  function linkClass(href) {
+    return `rounded-md px-3 py-2 text-sm ${
+      isActive(href) ? "bg-gray-900 text-white" : "text-gray-600 hover:bg-gray-100"
+    }`;
+  }
 }

@@ -213,7 +213,7 @@ export default function ClientDetailPage() {
       </div>
 
       {/* Assistiti */}
-      <section className="rounded-lg border border-gray-200 bg-white">
+      <section className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
         <h2 className="border-b border-gray-200 px-4 py-3 font-medium text-gray-900">
           Care recipients ({recipients.length})
         </h2>
@@ -250,7 +250,7 @@ export default function ClientDetailPage() {
       </section>
 
       {/* Tariffe personalizzate */}
-      <section className="rounded-lg border border-gray-200 bg-white">
+      <section className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
         <h2 className="border-b border-gray-200 px-4 py-3 font-medium text-gray-900">Custom rates</h2>
         {rates.length === 0 ? (
           <p className="px-4 py-6 text-gray-500">This client uses the default rates for every service.</p>
@@ -285,7 +285,7 @@ export default function ClientDetailPage() {
       </section>
 
       {/* Fatture del cliente */}
-      <section className="rounded-lg border border-gray-200 bg-white">
+      <section className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
         <h2 className="border-b border-gray-200 px-4 py-3 font-medium text-gray-900">Invoices</h2>
         {invoices.length === 0 ? (
           <p className="px-4 py-6 text-gray-500">No invoices for this client yet.</p>
