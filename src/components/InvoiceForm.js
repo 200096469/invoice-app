@@ -518,7 +518,11 @@ export default function InvoiceForm({ invoiceId = null }) {
       .order("sequence_number", { ascending: false })
       .limit(1)
       .maybeSingle();
-    const sequenceNumber = (lastNumber?.sequence_number ?? 0) + 1;
+    const sequenceNumber = Math.max(
+      (lastNumber?.sequence_number ?? 0) + 1,
+      // numero di partenza dalle impostazioni, solo per l'anno indicato
+      settings?.first_invoice_year === year ? settings.first_invoice_number : 1
+    );
 
     // 2. La fattura. GST copiata dalle impostazioni in questo momento.
     const { data: newInvoice, error: invoiceError } = await supabase

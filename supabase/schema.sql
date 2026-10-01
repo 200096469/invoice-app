@@ -31,7 +31,11 @@ create table settings (
   gst_registered       boolean not null default false,
   gst_rate             numeric(5,2) not null default 10.00,
   payment_terms_days   int not null default 14,
-  footer_message       text default 'Thank You For Your Business!'
+  footer_message       text default 'Thank You For Your Business!',
+  -- numero di partenza: "nel first_invoice_year parti almeno da first_invoice_number"
+  -- (serve quando l'app si comincia a usare a metà anno)
+  first_invoice_number int not null default 1 check (first_invoice_number >= 1),
+  first_invoice_year   int
 );
 
 
