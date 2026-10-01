@@ -78,6 +78,13 @@ export function financialYearLabel(startYear) {
   return `FY ${startYear}–${String(startYear + 1).slice(-2)}`;
 }
 
+// Sabato o domenica? "2026-09-26" (sabato) → true
+export function isWeekend(iso) {
+  if (!iso) return false;
+  const day = fromISODate(iso).getDay(); // 0 = domenica, 6 = sabato
+  return day === 0 || day === 6;
+}
+
 // "10:00", "12:30" → 2.5 ore (null se gli orari mancano o non sono validi)
 export function hoursBetween(start, end) {
   if (!start || !end) return null;

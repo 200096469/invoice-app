@@ -31,6 +31,7 @@ import {
   buildPeriodTitle,
   daysBetween,
   hoursBetween,
+  isWeekend,
   mondayOf,
   timesOverlap,
   todayISO,
@@ -285,15 +286,48 @@ export default function InvoiceForm({ invoiceId = null }) {
     if (!error && data !== null) updateLine(key, { unit_price: String(data) });
   }
 
-  function handleServiceChange(line, serviceId) {
+  // Sceglie la versione giusta del servizio per la data:
+  //   weekend + servizio feriale con versione weekend → versione weekend
+  //   giorno feriale + servizio weekend → torna alla versione feriale
+  function serviceForDate(serviceId, date) {
+    if (!serviceId) return serviceId;
+    const service = services.find((s) => String(s.id) === String(serviceId));
+    if (!service) return serviceId;
+    if (isWeekend(date) && service.weekend_service_id) {
+      return String(service.weekend_service_id);
+    }
+    if (date && !isWeekend(date)) {
+      const weekdayVersion = services.find((s) => String(s.weekend_service_id) === String(service.id));
+      if (weekdayVersion) return String(weekdayVersion.id);
+    }
+    return String(serviceId);
+  }
+
+  // Imposta servizio, descrizione, unità e tariffa di una riga
+  function setLineService(line, serviceId, extraChanges = {}) {
     const service = services.find((s) => String(s.id) === String(serviceId));
     updateLine(line.key, {
+      ...extraChanges,
       service_id: serviceId,
       description: service ? service.description : "",
       unit: service ? service.unit : line.unit,
       gst_applicable: service ? service.gst_applicable : true,
     });
     applyRate(line.key, line.care_recipient_id, serviceId);
+  }
+
+  function handleServiceChange(line, serviceId) {
+    setLineService(line, serviceForDate(serviceId, line.service_date));
+  }
+
+  // Cambiando la data, il servizio passa da Weekday a Weekend (o viceversa)
+  function handleDateChange(line, date) {
+    const resolved = serviceForDate(line.service_id, date);
+    if (line.service_id && resolved !== String(line.service_id)) {
+      setLineService(line, resolved, { service_date: date });
+    } else {
+      updateLine(line.key, { service_date: date });
+    }
   }
 
   function handleRecipientChange(line, recipientId) {
@@ -705,7 +739,8 @@ export default function InvoiceForm({ invoiceId = null }) {
 
               <label className="block sm:col-span-2">
                 <span className="text-xs text-gray-600">Date</span>
-                <input type="date" value={line.service_date} onChange={(e) => updateLine(line.key, { service_date: e.target.value })} className={inputClass} />
+                <input type="date" value={line.service_date} onChange={(e) => handleDateChange(line, e.target.value)} className={inputClass} />
+                {isWeekend(line.service_date) && <span className="text-xs font-medium text-purple-700">Weekend</span>}
               </label>
 
               {line.item_type !== "other" && (
@@ -783,6 +818,21 @@ export default function InvoiceForm({ invoiceId = null }) {
                 <span className="text-xs text-gray-600">Rate $</span>
                 <input type="number" step="0.01" min="0" value={line.unit_price} onChange={(e) => updateLine(line.key, { unit_price: e.target.value })} className={inputClass} />
               </label>
+
+              {/* Riga nel weekend con un servizio feriale senza versione weekend:
+                  avviso (non blocca), perché la tariffa potrebbe essere da alzare */}
+              {line.item_type === "service" &&
+                isWeekend(line.service_date) &&
+                (() => {
+                  const service = services.find((s) => String(s.id) === String(line.service_id));
+                  const isWeekendVersion = services.some((s) => String(s.weekend_service_id) === String(line.service_id));
+                  return service && !service.weekend_service_id && !isWeekendVersion ? (
+                    <p className="rounded-md bg-amber-50 px-3 py-1.5 text-sm text-amber-800 sm:col-span-6">
+                      This is a weekend date, but this service has no weekend version. Check the rate, or link a
+                      weekend version in Services &amp; Rates.
+                    </p>
+                  ) : null;
+                })()}
 
               {/* Avviso immediato se l'orario si sovrappone a un'altra riga */}
               {overlapWarnings[line.key] && (

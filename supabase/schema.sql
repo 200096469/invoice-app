@@ -83,14 +83,18 @@ create index care_recipients_client_idx on care_recipients(client_id);
 -- 4. SERVICES — catalogo delle prestazioni con tariffa di base
 --    Anche il rimborso chilometrico è un servizio (unit = 'Km'),
 --    così la sua tariffa si può personalizzare come le altre.
+--    weekend_service_id: il servizio da usare al sabato e alla domenica
+--    (es. "... Weekday" → "... Weekend"); il form cambia da solo.
 -- ---------------------------------------------------------------------
 create table services (
-  id             bigint generated always as identity primary key,
-  description    text not null,                -- es. "SAH Individual social support Weekday"
-  unit           text not null default 'hours',-- hours, Km...
-  default_rate   numeric(10,2) not null,
-  gst_applicable boolean not null default true,
-  active         boolean not null default true
+  id                 bigint generated always as identity primary key,
+  description        text not null,                -- es. "SAH Individual social support Weekday"
+  unit               text not null default 'hours',-- hours, Km...
+  default_rate       numeric(10,2) not null,
+  gst_applicable     boolean not null default true,
+  active             boolean not null default true,
+  weekend_service_id bigint references services(id) on delete set null,
+  constraint services_weekend_not_self check (weekend_service_id <> id)
 );
 
 
@@ -297,7 +301,11 @@ insert into services (description, unit, default_rate) values
   ('SAH Individual social support Weekday',                            'hours', 40.00),  -- id 1
   ('SAH General House Cleaning Weekday',                               'hours', 40.00),  -- id 2
   ('General house cleaning and SAH Individual social support Weekday', 'hours', 45.00),  -- id 3
-  ('Mileage Reimbursement',                                            'Km',     0.80);  -- id 4
+  ('Mileage Reimbursement',                                            'Km',     0.80),  -- id 4
+  ('SAH Individual social support Weekend',                            'hours', 50.00);  -- id 5
+
+-- il social support Weekday (1) usa la versione Weekend (5) al sabato e domenica
+update services set weekend_service_id = 5 where id = 1;
 
 -- esempi di tariffe personalizzate
 insert into rates (service_id, client_id, care_recipient_id, rate, notes) values
