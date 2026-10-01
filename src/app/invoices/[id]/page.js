@@ -14,7 +14,7 @@
 // Tutti e tre funzionano solo in un Client Component → "use client".
 // =====================================================================
 import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import {
@@ -25,9 +25,26 @@ import {
   STATUS_STYLES,
 } from "@/lib/format";
 
+// Azioni disponibili per ogni stato (il "ciclo di vita" della fattura):
+//   draft → sent → paid
+//   una fattura inviata si può annullare (void) o riportare in bozza
+const STATUS_ACTIONS = {
+  draft: [{ label: "Mark as sent", next: "sent", primary: true }],
+  sent: [
+    { label: "Mark as paid", next: "paid", primary: true },
+    { label: "Back to draft", next: "draft" },
+    { label: "Void", next: "void", danger: true },
+  ],
+  paid: [{ label: "Mark as unpaid", next: "sent" }],
+  void: [{ label: "Restore as draft", next: "draft" }],
+};
+
 export default function InvoiceDetailPage() {
   // 1. useParams: per /invoices/2 restituisce { id: "2" } (sempre stringa)
   const { id } = useParams();
+  const router = useRouter();
+  const [busy, setBusy] = useState(false); // true mentre un'azione è in corso
+  const [actionError, setActionError] = useState(null);
 
   // 2. useState: un contenitore per ogni informazione della pagina
   const [invoice, setInvoice] = useState(null);
@@ -97,6 +114,40 @@ export default function InvoiceDetailPage() {
     loadInvoice();
   }, [id]); // [id] = riesegui se l'utente passa a un'altra fattura
 
+  // Cambia lo stato della fattura (UPDATE nel database)
+  async function changeStatus(nextStatus) {
+    if (nextStatus === "void" && !window.confirm("Void this invoice? It will no longer count in the totals.")) {
+      return;
+    }
+    setBusy(true);
+    setActionError(null);
+    const { error } = await supabase.from("invoices").update({ status: nextStatus }).eq("id", id);
+    if (error) {
+      setActionError(error.message);
+    } else {
+      // aggiorna solo lo stato locale: non serve ricaricare la pagina
+      setInvoice((current) => ({ ...current, status: nextStatus }));
+    }
+    setBusy(false);
+  }
+
+  // Elimina una bozza (DELETE). Le righe si cancellano da sole grazie a
+  // "on delete cascade" nello schema del database.
+  async function deleteDraft() {
+    if (!window.confirm(`Delete draft invoice ${invoice.invoice_number}? This cannot be undone.`)) {
+      return;
+    }
+    setBusy(true);
+    setActionError(null);
+    const { error } = await supabase.from("invoices").delete().eq("id", id).eq("status", "draft");
+    if (error) {
+      setActionError(error.message);
+      setBusy(false);
+      return;
+    }
+    router.push("/");
+  }
+
   // ---------- Stati intermedi: caricamento, non trovata, errore ----------
   if (loading) {
     return <p className="text-gray-500">Loading invoice...</p>;
@@ -141,6 +192,54 @@ export default function InvoiceDetailPage() {
             Print preview
           </Link>
         </div>
+      </div>
+
+      {/* Avviso per le fatture annullate: restano in archivio ma non contano */}
+      {invoice.status === "void" && (
+        <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-800">
+          <strong>This invoice has been voided.</strong> It is kept in the records so that invoice
+          numbers have no gaps, but it is not counted in any totals. Use “Restore as draft” to reactivate it.
+        </p>
+      )}
+
+      {/* Azioni sullo stato: cambiano in base allo stato attuale */}
+      <div className="flex flex-wrap items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-3">
+        <span className="mr-2 text-sm text-gray-500">Actions:</span>
+        {STATUS_ACTIONS[invoice.status].map((action) => (
+          <button
+            key={action.next}
+            disabled={busy}
+            onClick={() => changeStatus(action.next)}
+            className={`rounded-md px-3 py-1.5 text-sm disabled:opacity-50 ${
+              action.primary
+                ? "bg-blue-600 font-medium text-white hover:bg-blue-500"
+                : action.danger
+                ? "border border-red-300 text-red-700 hover:bg-red-50"
+                : "border border-gray-300 text-gray-700 hover:bg-gray-100"
+            }`}
+          >
+            {action.label}
+          </button>
+        ))}
+        {invoice.status === "draft" && (
+          <button
+            disabled={busy}
+            onClick={deleteDraft}
+            className="ml-auto rounded-md border border-red-300 px-3 py-1.5 text-sm text-red-700 hover:bg-red-50 disabled:opacity-50"
+          >
+            Delete draft
+          </button>
+        )}
+        {/* Modifica possibile solo per bozze e fatture inviate */}
+        {(invoice.status === "draft" || invoice.status === "sent") && (
+          <Link
+            href={`/invoices/${invoice.id}/edit`}
+            className={`${invoice.status === "draft" ? "" : "ml-auto"} rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-100`}
+          >
+            Edit invoice
+          </Link>
+        )}
+        {actionError && <p className="w-full text-sm text-red-600">{actionError}</p>}
       </div>
 
       {/* Riquadri: cliente e date */}

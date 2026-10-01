@@ -20,13 +20,20 @@ body {
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
 }
 
-/* Il "foglio" della fattura: largo come un A4 a schermo */
+/* Il "foglio" della fattura: un A4 vero anche a schermo
+   (210 × 297 mm, margini interni di 15 mm come quelli di stampa),
+   così l'anteprima corrisponde esattamente al PDF. */
 .invoice-sheet {
-  max-width: 210mm;
+  position: relative;
+  box-sizing: border-box;
+  width: 210mm;
+  min-height: 297mm;
+  padding: 15mm;
 }
 
-/* In stampa: pagina A4 con margini, sfondo bianco,
-   e colori di sfondo (le barre scure) stampati davvero */
+/* In stampa: pagina A4 con margini di 15 mm. Il foglio perde il suo
+   padding (ci pensano i margini della pagina) e occupa l'altezza utile,
+   così il piè di pagina resta in fondo. */
 @page {
   size: A4;
   margin: 15mm;
@@ -37,7 +44,9 @@ body {
     background: #ffffff;
   }
   .invoice-sheet {
-    max-width: none;
+    width: auto;
+    min-height: calc(297mm - 30mm - 2mm);
+    padding: 0;
   }
   * {
     -webkit-print-color-adjust: exact;

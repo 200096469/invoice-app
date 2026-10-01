@@ -30,6 +30,12 @@ export default function ClientDetailPage() {
   const [notFound, setNotFound] = useState(false);
   const [error, setError] = useState(null);
 
+  // Form "Add care recipient"
+  const [newName, setNewName] = useState("");
+  const [newAddress, setNewAddress] = useState("");
+  const [adding, setAdding] = useState(false);
+  const [addError, setAddError] = useState(null);
+
   useEffect(() => {
     async function loadClient() {
       setLoading(true);
@@ -108,6 +114,31 @@ export default function ClientDetailPage() {
 
     loadClient();
   }, [id]);
+
+  // Aggiunge un assistito a questo cliente (INSERT) e lo mostra subito
+  async function addRecipient(event) {
+    event.preventDefault();
+    if (!newName.trim()) {
+      setAddError("Enter the care recipient's name.");
+      return;
+    }
+    setAdding(true);
+    setAddError(null);
+    const { data, error } = await supabase
+      .from("care_recipients")
+      .insert({ client_id: Number(id), full_name: newName.trim(), address: newAddress.trim() || null })
+      .select("*")
+      .single();
+    if (error) {
+      setAddError(error.message);
+    } else {
+      // aggiunge il nuovo assistito alla lista, in ordine alfabetico
+      setRecipients((current) => [...current, data].sort((a, b) => a.full_name.localeCompare(b.full_name)));
+      setNewName("");
+      setNewAddress("");
+    }
+    setAdding(false);
+  }
 
   if (loading) return <p className="text-gray-500">Loading client...</p>;
 
@@ -197,6 +228,24 @@ export default function ClientDetailPage() {
               </li>
             ))}
           </ul>
+        )}
+
+        {/* Per le compagnie si possono aggiungere assistiti; un privato ha solo sé stesso */}
+        {client.client_type === "company" && (
+          <form onSubmit={addRecipient} className="flex flex-wrap items-end gap-2 border-t border-gray-200 bg-gray-50 px-4 py-3">
+            <label className="block min-w-40 flex-1">
+              <span className="text-xs text-gray-600">Name</span>
+              <input value={newName} onChange={(e) => setNewName(e.target.value)} className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm" />
+            </label>
+            <label className="block min-w-60 flex-[2]">
+              <span className="text-xs text-gray-600">Address</span>
+              <input value={newAddress} onChange={(e) => setNewAddress(e.target.value)} className="w-full rounded-md border border-gray-300 px-2 py-1.5 text-sm" />
+            </label>
+            <button type="submit" disabled={adding} className="rounded-md bg-gray-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-gray-700 disabled:opacity-50">
+              {adding ? "Adding..." : "Add care recipient"}
+            </button>
+            {addError && <p className="w-full text-sm text-red-600">{addError}</p>}
+          </form>
         )}
       </section>
 

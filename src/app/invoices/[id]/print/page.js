@@ -137,8 +137,18 @@ export default function InvoicePrintPage() {
         </button>
       </div>
 
-      {/* Il "foglio" A4 */}
-      <article className="invoice-sheet mx-auto bg-white p-10 text-[13px] leading-snug text-gray-900 shadow-sm ring-1 ring-gray-200 print:p-0 print:shadow-none print:ring-0">
+      {/* Il "foglio" A4. Il contenitore esterno permette lo scorrimento
+          orizzontale su schermi stretti (il foglio è largo 210 mm). */}
+      <div className="overflow-x-auto pb-4 print:overflow-visible print:pb-0">
+      <article className="invoice-sheet mx-auto flex flex-col bg-white text-[13px] leading-snug text-gray-900 shadow-sm ring-1 ring-gray-200 print:shadow-none print:ring-0">
+        {/* Fattura annullata: grande scritta diagonale, anche nel PDF */}
+        {invoice.status === "void" && (
+          <div className="pointer-events-none absolute inset-0 flex items-center justify-center overflow-hidden">
+            <span className="-rotate-[30deg] select-none text-[120px] font-black tracking-widest text-red-600/20">
+              VOID
+            </span>
+          </div>
+        )}
         {/* Intestazione: attività a sinistra, titolo e numeri a destra */}
         <header className="flex justify-between gap-8">
           <div>
@@ -275,13 +285,14 @@ export default function InvoicePrintPage() {
           </table>
         </section>
 
-        {/* Piè di pagina */}
-        <footer className="mt-10 text-center">
+        {/* Piè di pagina: mt-auto lo spinge in fondo al foglio A4 */}
+        <footer className="mt-auto pt-10 text-center">
           <p>If you have any questions about this invoice, please contact</p>
           <p>{business.email}</p>
           <p className="mt-2 font-bold italic">{business.footer_message}</p>
         </footer>
       </article>
+      </div>
     </div>
   );
 }
