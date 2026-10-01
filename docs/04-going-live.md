@@ -10,6 +10,17 @@ How to publish the app for daily use on iPhone, iPad and computer, **at no cost*
 
 Keep the **school/demo** Supabase project for class. The real business uses a **separate** project.
 
+## Branches: school vs business
+
+| Branch       | Contains                                         | Used for                          |
+|--------------|--------------------------------------------------|-----------------------------------|
+| `main`       | The school project, exactly as presented         | Class presentation                |
+| `production` | `main` + iPhone/iPad support + this guide        | The real app, published on Netlify |
+
+- Working on the **school** project → switch to `main` (bottom-left corner of VS Code).
+- Working on the **business** app → switch to `production`.
+- Netlify publishes **only** the `production` branch, so changes on `main` never reach the real app.
+
 ---
 
 ## Step 1 — Create the real database (Supabase)
@@ -36,7 +47,9 @@ The app has only one user. Supabase allows anyone to **sign up** by default, and
 
 1. Sign up at [netlify.com](https://www.netlify.com) **with GitHub** (free plan).
 2. **Add new project → Import an existing project → GitHub** → choose the `invoice-app` repository.
-3. Netlify detects Next.js by itself. Leave the build settings as suggested (`npm run build`).
+3. Netlify detects Next.js by itself. In the build settings:
+   - **Branch to deploy: `production`** (not `main`)
+   - Build command: leave as suggested (`npm run build`)
 4. **Before the first deploy**, add the environment variables (the build fails without them):
 
    | Key | Value (from the **real** Supabase project) |
@@ -47,7 +60,9 @@ The app has only one user. Supabase allows anyone to **sign up** by default, and
 5. **Deploy**. After a few minutes the app is online at an address like `https://random-name.netlify.app`.
 6. Optional: **Project configuration → Change project name** to get a nicer address, e.g. `michele-invoices.netlify.app`.
 
-From now on, every commit pushed to GitHub (`Sync Changes` in VS Code) updates the online app automatically.
+From now on, every commit pushed to the **`production`** branch (`Sync Changes` in VS Code while on `production`) updates the online app automatically. Commits on `main` do not change it.
+
+If the branch was not set during the import: **Project configuration → Build & deploy → Branches and deploy contexts → Production branch** → `production`.
 
 > Your computer keeps using `.env.local`, which points to the **demo** project. Only Netlify uses the real one, so development and real data never mix.
 
@@ -76,4 +91,5 @@ Open the online address, sign in with Michele's account, then:
 - **Backups**: the free Supabase plan is not a backup service. Once a month, export the main tables (Table Editor → table → *Export to CSV*) or keep the PDFs of every invoice sent — business records are generally kept for 5 years.
 - **Inactivity**: free Supabase projects can be **paused** after a period without activity. Weekly use normally prevents it; if it happens, open the Supabase dashboard and click **Restore**.
 - **Real data never goes into GitHub**: the repository holds code and sample data only.
-- **Updates**: test changes locally on the demo project first, then commit — Netlify publishes them automatically.
+- **Updates**: on the `production` branch, test changes locally on the demo project first, then commit — Netlify publishes them automatically.
+- **Bringing school improvements into the business app**: switch to `production`, then in Source Control choose **⋯ → Branch → Merge…** and pick `main`.
