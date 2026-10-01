@@ -69,7 +69,7 @@ The `invoice_totals` view adds up the lines every time it is read. The totals ca
 
 ### 5. Invoice numbers
 
-The number is built from `sequence_number` and `year`, e.g. `53/26`. It is unique across all clients and restarts at 1 every year.
+The number is built from `sequence_number` and `year`, e.g. `53/2026`. It is unique across all clients and restarts at 1 every calendar year (1 January).
 
 ### 6. Security
 

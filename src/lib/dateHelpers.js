@@ -48,6 +48,36 @@ export function mondayOf(iso) {
   return addDays(iso, shift);
 }
 
+// "10:30" → 630 (minuti dalla mezzanotte)
+function toMinutes(time) {
+  const [h, m] = time.slice(0, 5).split(":").map(Number);
+  return h * 60 + m;
+}
+
+// Due fasce orarie si sovrappongono se una inizia prima che l'altra finisca.
+// Orari consecutivi NON si sovrappongono: 07:00–11:00 e 11:00–13:00 → false
+export function timesOverlap(startA, endA, startB, endB) {
+  if (!startA || !endA || !startB || !endB) return false;
+  return toMinutes(startA) < toMinutes(endB) && toMinutes(startB) < toMinutes(endA);
+}
+
+// ---------------------------------------------------------------------
+// Anno fiscale australiano: dal 1 luglio al 30 giugno dell'anno dopo.
+// Lo identifichiamo con l'anno di INIZIO:
+//   "2026-09-21" → 2026 (FY 2026–27)
+//   "2027-03-10" → 2026 (FY 2026–27)
+//   "2027-07-01" → 2027 (FY 2027–28)
+// ---------------------------------------------------------------------
+export function financialYear(iso) {
+  const [year, month] = iso.split("-").map(Number);
+  return month >= 7 ? year : year - 1;
+}
+
+// 2026 → "FY 2026–27"
+export function financialYearLabel(startYear) {
+  return `FY ${startYear}–${String(startYear + 1).slice(-2)}`;
+}
+
 // "10:00", "12:30" → 2.5 ore (null se gli orari mancano o non sono validi)
 export function hoursBetween(start, end) {
   if (!start || !end) return null;

@@ -148,8 +148,8 @@ $$;
 -- ---------------------------------------------------------------------
 -- 7. INVOICES — una per cliente per periodo (di solito 1 settimana,
 --    a volte 2: il periodo è libero, period_start → period_end)
---    Numero nel formato "53/26": progressivo unico per tutti i
---    clienti, che riparte da 1 ogni anno.
+--    Numero nel formato "53/2026": progressivo unico per tutti i
+--    clienti, che riparte da 1 ogni anno solare (1 gennaio).
 --    gst_included e gst_rate vengono COPIATI da settings alla
 --    creazione: le fatture già emesse non cambiano mai.
 -- ---------------------------------------------------------------------
@@ -158,7 +158,7 @@ create table invoices (
   year            int not null,
   sequence_number int not null,
   invoice_number  text generated always as
-                  (sequence_number::text || '/' || lpad((year % 100)::text, 2, '0')) stored,
+                  (sequence_number::text || '/' || year::text) stored,
   client_id       bigint not null references clients(id) on delete restrict,
   issue_date      date not null default current_date,
   due_date        date,

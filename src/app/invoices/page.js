@@ -9,7 +9,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
 import { formatCurrency, formatDate, STATUS_STYLES } from "@/lib/format";
-import { todayISO } from "@/lib/dateHelpers";
+import { financialYear, financialYearLabel, todayISO } from "@/lib/dateHelpers";
 
 const STATUSES = ["all", "draft", "sent", "paid", "void"];
 
@@ -21,7 +21,7 @@ export default function InvoicesPage() {
   // Filtri scelti dall'utente
   const [statusFilter, setStatusFilter] = useState("all");
   const [clientFilter, setClientFilter] = useState("all");
-  const [yearFilter, setYearFilter] = useState("all");
+  const [yearFilter, setYearFilter] = useState("all"); // anno fiscale (1 luglio – 30 giugno)
 
   useEffect(() => {
     async function loadInvoices() {
@@ -42,14 +42,15 @@ export default function InvoicesPage() {
   const clientOptions = [
     ...new Map(invoices.map((inv) => [inv.client_id, `${inv.client_code} – ${inv.client_name}`])),
   ].sort((a, b) => a[1].localeCompare(b[1]));
-  const yearOptions = [...new Set(invoices.map((inv) => inv.year))].sort((a, b) => b - a);
+  // Anni fiscali australiani presenti, calcolati dalla data di emissione
+  const yearOptions = [...new Set(invoices.map((inv) => financialYear(inv.issue_date)))].sort((a, b) => b - a);
 
   // Fatture che passano tutti i filtri
   const visible = invoices.filter(
     (inv) =>
       (statusFilter === "all" || inv.status === statusFilter) &&
       (clientFilter === "all" || String(inv.client_id) === clientFilter) &&
-      (yearFilter === "all" || String(inv.year) === yearFilter)
+      (yearFilter === "all" || String(financialYear(inv.issue_date)) === yearFilter)
   );
 
   // Totali delle fatture visibili (le annullate non contano)
@@ -97,10 +98,10 @@ export default function InvoicesPage() {
           ))}
         </select>
         <select value={yearFilter} onChange={(e) => setYearFilter(e.target.value)} className="rounded-md border border-gray-300 px-2 py-1 text-sm">
-          <option value="all">All years</option>
+          <option value="all">All financial years</option>
           {yearOptions.map((year) => (
             <option key={year} value={year}>
-              {year}
+              {financialYearLabel(year)}
             </option>
           ))}
         </select>

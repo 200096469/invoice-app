@@ -12,7 +12,7 @@
 // e gli assistiti del cliente scelto.
 //
 // Salvataggio di una NUOVA fattura:
-//   1. calcola il prossimo numero dell'anno (es. 54/26)
+//   1. calcola il prossimo numero dell'anno (es. 54/2026)
 //   2. inserisce la fattura in invoices
 //   3. inserisce le righe in invoice_items
 // Salvataggio di una MODIFICA:
@@ -25,13 +25,14 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { supabase } from "@/lib/supabaseClient";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatDayMonth, formatTime } from "@/lib/format";
 import {
   addDays,
   buildPeriodTitle,
   daysBetween,
   hoursBetween,
   mondayOf,
+  timesOverlap,
   todayISO,
 } from "@/lib/dateHelpers";
 
@@ -220,6 +221,20 @@ export default function InvoiceForm({ invoiceId = null }) {
   const taxAmount = gstOn ? Math.round(gstBase * gstRate) / 100 : 0;
   const total = subtotal + taxAmount + (Number(otherAmount) || 0);
 
+  // Sovrapposizioni tra righe di QUESTA fattura (ricalcolate a ogni modifica).
+  // Risultato: { chiaveRiga: ["Overlaps with line 2 (10:00–12:00)", ...] }
+  const overlapWarnings = {};
+  lines.forEach((a, i) => {
+    lines.forEach((b, j) => {
+      if (i === j || !a.service_date || a.service_date !== b.service_date) return;
+      if (timesOverlap(a.start_time, a.end_time, b.start_time, b.end_time)) {
+        overlapWarnings[a.key] = overlapWarnings[a.key] ?? [];
+        overlapWarnings[a.key].push(`Overlaps with line ${j + 1} (${b.start_time}–${b.end_time})`);
+      }
+    });
+  });
+  const hasOverlaps = Object.keys(overlapWarnings).length > 0;
+
   // ---------- Gestione delle date ----------
   function handleIssueDateChange(value) {
     setIssueDate(value);
@@ -346,6 +361,45 @@ export default function InvoiceForm({ invoiceId = null }) {
       if (line.start_time && line.end_time && line.end_time <= line.start_time)
         return `Line ${n}: the end time must be after the start time.`;
     }
+    if (hasOverlaps) return "Some lines overlap in time on the same day. Fix the times marked in red.";
+    return null;
+  }
+
+  // Controlla che gli orari non si sovrappongano a quelli di ALTRE fatture
+  // (anche di altri clienti): non si può essere in due posti insieme.
+  // Restituisce il messaggio d'errore, oppure null se è tutto a posto.
+  async function findConflictsWithOtherInvoices() {
+    const timedLines = lines.filter((l) => l.service_date && l.start_time && l.end_time);
+    if (timedLines.length === 0) return null;
+
+    const dates = [...new Set(timedLines.map((l) => l.service_date))];
+    // righe di altre fatture negli stessi giorni, con numero e stato della fattura
+    const { data: others, error } = await supabase
+      .from("invoice_items")
+      .select("invoice_id, service_date, start_time, end_time, care_recipients(full_name), invoices(invoice_number, status)")
+      .in("service_date", dates)
+      .not("start_time", "is", null);
+
+    if (error) return `Could not check for overlapping times: ${error.message}`;
+
+    for (const [index, line] of lines.entries()) {
+      if (!timedLines.includes(line)) continue;
+      const clash = others.find(
+        (other) =>
+          other.service_date === line.service_date &&
+          other.invoices?.status !== "void" &&
+          (!isEdit || other.invoice_id !== existing.id) && // in modifica si ignora la fattura stessa
+          timesOverlap(line.start_time, line.end_time, other.start_time, other.end_time)
+      );
+      if (clash) {
+        return (
+          `Line ${index + 1} (${formatDayMonth(line.service_date)} ${line.start_time}–${line.end_time}) ` +
+          `overlaps with invoice ${clash.invoices.invoice_number}: ` +
+          `${clash.care_recipients?.full_name ?? "another service"}, ` +
+          `${formatTime(clash.start_time)}–${formatTime(clash.end_time)}.`
+        );
+      }
+    }
     return null;
   }
 
@@ -391,6 +445,14 @@ export default function InvoiceForm({ invoiceId = null }) {
     }
     setSaving(true);
     setFormError(null);
+
+    // controllo sul database: orari in conflitto con altre fatture?
+    const conflict = await findConflictsWithOtherInvoices();
+    if (conflict) {
+      setFormError(conflict);
+      setSaving(false);
+      return;
+    }
 
     if (isEdit) {
       await saveChanges();
@@ -717,6 +779,13 @@ export default function InvoiceForm({ invoiceId = null }) {
                 <span className="text-xs text-gray-600">Rate $</span>
                 <input type="number" step="0.01" min="0" value={line.unit_price} onChange={(e) => updateLine(line.key, { unit_price: e.target.value })} className={inputClass} />
               </label>
+
+              {/* Avviso immediato se l'orario si sovrappone a un'altra riga */}
+              {overlapWarnings[line.key] && (
+                <p className="rounded-md bg-red-50 px-3 py-1.5 text-sm text-red-700 sm:col-span-6">
+                  ⚠ {overlapWarnings[line.key].join(" · ")}
+                </p>
+              )}
 
               <p className="self-end text-right text-sm font-medium text-gray-900 sm:col-span-6">
                 Amount: {formatCurrency(lineAmount(line))}
