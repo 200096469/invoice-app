@@ -21,11 +21,12 @@ invoice-app/
 ├── docs/
 │   ├── 01-project-plan.md       ← idea, pages, routes, requirements checklist
 │   └── 02-database-schema.md    ← tables, relationships, rate rules
+├── src/
+│   └── app/                     ← Next.js pages (App Router)
+├── public/                      ← static files (images, icons)
 └── supabase/
     └── schema.sql               ← run once in the Supabase SQL Editor
 ```
-
-The Next.js source code (`app/`, `components/`, `lib/`) will be added in the building phase.
 
 ## Database setup
 
@@ -37,6 +38,13 @@ The Next.js source code (`app/`, `components/`, `lib/`) will be added in the bui
 
 The sample data is invented. Never use real client or care recipient data in the class demo.
 
+## Run locally
+
+```bash
+npm install      # first time only
+npm run dev      # open http://localhost:3000
+```
+
 ## Tech stack
 
 | Item      | Choice                         |
@@ -44,4 +52,5 @@ The sample data is invented. Never use real client or care recipient data in the
 | Framework | Next.js (App Router)           |
 | Database  | Supabase (Postgres)            |
 | Language  | JavaScript                     |
+| Styling   | Tailwind CSS                   |
 | PDF       | Browser print → Save as PDF    |

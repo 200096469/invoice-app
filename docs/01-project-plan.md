@@ -43,7 +43,7 @@ The invoices are currently written by hand in a document template every week. Th
 
 | # | Requirement           | How the app meets it                                              |
 |---|-----------------------|-------------------------------------------------------------------|
-| 1 | Next.js App Router    | All pages live in the `app/` folder                               |
+| 1 | Next.js App Router    | All pages live in the `src/app/` folder                               |
 | 2 | 2+ dynamic routes     | `/invoices/[id]`, `/invoices/[id]/print`, `/clients/[id]`         |
 | 3 | Supabase fetching     | Each dynamic route fetches the record matching its `id`           |
 | 4 | Display the data      | Invoice lines and totals in a table, client data in cards         |
